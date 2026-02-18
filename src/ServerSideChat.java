@@ -1,84 +1,66 @@
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.PrintWriter;
-import java.net.ServerSocket;
-import java.net.Socket;
-import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
+import java.io.*;
+import java.net.*;
+import java.util.*;
 
 public class ServerSideChat {
+    // List to keep track of all connected clients
+    private static List<ClientHandler> clients = new ArrayList<>();
 
-    // Keeps track of all connected clients (thread-safe for broadcast loops)
-    private static final List<ClientHandler> clients = new CopyOnWriteArrayList<>();
+    private ServerSideChat() {
+    }
 
-    public static void main(String[] args) {
-        int port = 5000;
+    public static void main(String[] args) throws IOException {
+        ServerSocket serverSocket = new ServerSocket(5000);
+        System.out.println("Server started. Waiting for clients...");
 
-        System.out.println("Starting server on port " + port + "...");
+        while (true) {
+            Socket clientSocket = serverSocket.accept();
+            System.out.println("Client connected: " + clientSocket);
 
-        try (ServerSocket serverSocket = new ServerSocket(port)) {
-            System.out.println("Server started. Waiting for clients...");
-
-            while (true) {
-                Socket clientSocket = serverSocket.accept();
-                System.out.println("Client connected: " + clientSocket.getRemoteSocketAddress());
-
-                ClientHandler handler = new ClientHandler(clientSocket);
-                clients.add(handler);
-
-                Thread t = new Thread(handler);
-                t.start();
-            }
-
-        } catch (IOException e) {
-            System.out.println("Server error: " + e.getMessage());
+            // Spawn a new thread for each client
+            ClientHandler clientThread = new ClientHandler(clientSocket, clients);
+            clients.add(clientThread);
+            new Thread(clientThread).start();
         }
     }
 
-    // Static so it can be created from main() easily
-    private static class ClientHandler implements Runnable {
+    public static ServerSideChat createServerSideChat() {
+        return new ServerSideChat();
+    }
+}
 
-        private final Socket socket;
-        private final PrintWriter out;
-        private final BufferedReader in;
+class ClientHandler implements Runnable {
+    private Socket clientSocket;
+    private List<ClientHandler> clients;
+    private PrintWriter out;
+    private BufferedReader in;
 
-        ClientHandler(Socket socket) throws IOException {
-            this.socket = socket;
-            this.out = new PrintWriter(socket.getOutputStream(), true);
-            this.in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-        }
+    public ClientHandler(Socket socket, List<ClientHandler> clients) throws IOException {
+        this.clientSocket = socket;
+        this.clients = clients;
+        this.out = new PrintWriter(clientSocket.getOutputStream(), true);
+        this.in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
+    }
 
-        @Override
-        public void run() {
-            try {
-                String msg;
-
-                // Read messages from this client and broadcast to everyone
-                while ((msg = in.readLine()) != null) {
-                    broadcast(msg);
+    public void run() {
+        try {
+            String inputLine;
+            while ((inputLine = in.readLine()) != null) {
+                // Broadcast message to all clients
+                for (ClientHandler aClient : clients) {
+                    aClient.out.println(inputLine);
                 }
-
+            }
+        } catch (IOException e) {
+            System.out.println("An error occurred: " + e.getMessage());
+        } finally {
+            try {
+                in.close();
+                out.close();
+                clientSocket.close();
             } catch (IOException e) {
-                System.out.println("Client disconnected: " + socket.getRemoteSocketAddress());
-            } finally {
-                closeEverything();
+                e.printStackTrace();
             }
-        }
-
-        private void broadcast(String message) {
-            for (ClientHandler client : clients) {
-                client.out.println(message);
-            }
-        }
-
-        private void closeEverything() {
-            clients.remove(this);
-
-            try { in.close(); } catch (IOException ignored) {}
-            out.close();
-
-            try { socket.close(); } catch (IOException ignored) {}
         }
     }
 }
