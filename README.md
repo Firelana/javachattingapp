@@ -3,7 +3,6 @@
 A real-time chat application with multiple clients that was constructed with Java Sockets and wing GUI.  
 This project showcases multithreading, client-server architecture, and fundamental networking in Java.
 
-[Python313](../../Python313)
 # Features
 
 Multi-client chat assistance
